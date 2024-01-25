@@ -1,0 +1,115 @@
+# minimal-dynlinked-android-lptools
+
+This repo is basically a file repository for easily downloading lptools
+that are compiled right from the latest Android ROM sources!
+
+# How did you compile these?
+
+As a ROM maintainer, I have to maintain my device sources continuously
+and so compile AOSP with the latest sources and fix bugs. These tools
+are compiled as part of the host tools used for packaging builds during
+ROM builds. Here's how it works;
+
+1. The build system copies over the files that would be placed in the partitions as defined in `PRODUCT_COPY_FILES` mapping into their respective folders.
+2. The contents of the folders are packaged into their respective images/archives.
+3. The images of the partitions specified in `BOARD_$(PARTITION_GROUP)_IMAGES_LIST` get incorporated into `super.img` using `lpmake`.
+
+After this comes the ROM packaging process - Packaging the target files
+ZIP and the OTA package.
+
+# How did you find the libraries used by these binaries?
+
+It's pretty simple. I copied the binaries first. Then ran `lpmake` and
+placed the reported missing libraries into their respective `lib` and
+`lib64` folders. It wasn't that easy though - You get missing library
+error only for a single library for each run, so I had to copy one
+library, try to run, get the error and copy the other library and
+repeat the process until I no longer get an error. I know I could use
+`readelf` instead and pull the libraries mentioned as dependencies of
+`lpmake` right away, but the method I used looked easier to me.
+
+# What files can these tools fiddle with?
+
+These are for unpacking and repacking `super.img` files. Keep reading
+through this README for example usages.
+
+# Example usages
+
+## `lpmake`
+
+`lpmake` is the tool used to package super.img files, and here's the
+base command that should work in most cases for a virtual A/B device
+with `system`, `vendor`, `product` and `odm` partitions;
+
+```
+lpmake  \
+    --metadata-size 65536  \
+    --super-name super  \
+    --metadata-slots 2  \
+    --device super:5679087616  \
+    --group main:5603225600  \
+    --partition system:readonly:3905933312:main --image system=./system.img  \
+    --partition vendor:readonly:627384320:main --image vendor=./vendor.img  \
+    --partition product:readonly:1065558016:main --image product=./product.img  \
+    --partition odm:readonly:4349952:main --image odm=./odm.img  \
+    --sparse  \
+    --output ./super.img
+```
+
+This command is specifically made for a Samsung device, but don't fret,
+adapting this command to *your* device is child's play!
+
+Note: The sizes have to be **block sizes**, not *bytes*.
+
+First, you'll have to determine the value for `--metadata-size` - You
+most probably won't have to touch the value I gave here as it's the
+same on pretty much all devices. But if, for some reason, your device
+doesn't boot even after defining the other properties properly, then
+you'll have to experiment and find the correct metadata size. You can
+also refer to your device's custom ROM sources, if any, for this.
+
+Then comes the value for `--metadata-slots`. It's pretty simple to
+determine. If your device is A-only, then set it to 1. If it's A/B
+instead, then the value you'll need is 2. It's basically the count
+for how many slots your device has.
+
+Now to the value for `--device`. It has the structure of
+`partition_name:partition_size`. Since we're building `super` partition,
+it has to be `super:partition_size`. You have to set partition size to a
+value bigger than the sum of the size of your partition group and the
+metadata size as long as you don't exceed the physical size of the
+partition on your device.
+
+The value of `--group` is a bit more simple. It determines the name and
+the size of your partition group. The structure of this is the same as
+`--device` except you use the values for the group instead. You can
+name the group however you want as long as the name is made out of
+letters, numbers and underscores. Any other character in the name has
+the potential of breaking the tool. As for the size, it has to be
+bigger than or equal to the sum of the sizes of your partitions in the
+group and a multiply of 8.
+
+As for `--partition` and its paired parameter `--image`, the structure
+is basically `partition_name:readonly:partition_size:partition_group`
+(I'm not sure if you can pack a partition as R/W by default, I'll do a
+research on that and update this section accordingly) and
+`partition_name:/path/to/partition.img` respectively. These are self
+explanatory already.
+
+Then `--output` parameter defines where your `super.img` will be saved.
+
+## `lpunpack`
+
+The usage of this one is far easier and more straightforward than
+`lpmake`. Here's the usage as follows;
+
+```
+lpunpack super.img
+```
+
+And this command will unpack all of the partitions packed in the
+`super` image in the form of IMG files.
+
+# Credits
+
+- [Android Open Source Project](https://android.googlesource.com)
